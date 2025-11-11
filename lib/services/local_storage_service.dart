@@ -12,6 +12,8 @@ class LocalStorageService {
   static const String _odooUrlKey = 'odoo_url';
   static const String _odooDatabaseKey = 'odoo_database';
   static const String _isFirstLoginKey = 'is_first_login';
+  static const String _savedEmailKey = 'saved_email';
+  static const String _savedPasswordKey = 'saved_password';
 
   // Cache duration - refresh data after 15 minutes
   static const Duration _cacheDuration = Duration(minutes: 15);
@@ -260,6 +262,35 @@ class LocalStorageService {
     await prefs.remove(_odooUrlKey);
     await prefs.remove(_odooDatabaseKey);
     await prefs.setBool(_isFirstLoginKey, true);
+  }
+
+  /// Persist last successful login credentials (plain text for convenience only)
+  Future<void> saveLastCredentials({
+    required String email,
+    required String password,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_savedEmailKey, email);
+    await prefs.setString(_savedPasswordKey, password);
+  }
+
+  /// Retrieve the last saved email if available
+  Future<String?> getSavedEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_savedEmailKey);
+  }
+
+  /// Retrieve the last saved password if available
+  Future<String?> getSavedPassword() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_savedPasswordKey);
+  }
+
+  /// Clear stored credentials (used on logout)
+  Future<void> clearSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_savedEmailKey);
+    await prefs.remove(_savedPasswordKey);
   }
 
   /// Clear all data including Odoo configuration

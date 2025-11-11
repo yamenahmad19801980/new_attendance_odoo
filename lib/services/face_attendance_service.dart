@@ -18,6 +18,7 @@ class FaceAttendanceService {
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isCameraActive = false;
+  bool? _geoFieldsSupported;
 
   // Getter for camera initialization status
   bool get isInitialized => _isInitialized;
@@ -112,6 +113,10 @@ class FaceAttendanceService {
         };
       }
 
+      if (!_isCameraActive) {
+        await startCamera();
+      }
+
       // Get current location
       final location = await _getCurrentLocation();
       if (location == null) {
@@ -202,7 +207,19 @@ class FaceAttendanceService {
       List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
-        return '${placemark.street}, ${placemark.locality}, ${placemark.administrativeArea}';
+        final street = placemark.street?.trim();
+        final locality = placemark.locality?.trim();
+        final adminArea = placemark.administrativeArea?.trim();
+
+        final parts = [
+          if (street != null && street.isNotEmpty) street,
+          if (locality != null && locality.isNotEmpty) locality,
+          if (adminArea != null && adminArea.isNotEmpty) adminArea,
+        ];
+
+        if (parts.isNotEmpty) {
+          return parts.join(', ');
+        }
       }
       return 'Unknown location';
     } catch (e) {
@@ -235,7 +252,7 @@ class FaceAttendanceService {
 
       if (isCurrentlyCheckedIn) {
         // Perform check-out
-        return await _performCheckOut(
+        return await performCheckOut(
           attendanceId: currentAttendanceId,
           latitude: latitude,
           longitude: longitude,
@@ -243,7 +260,7 @@ class FaceAttendanceService {
         );
       } else {
         // Perform check-in
-        return await _performCheckIn(
+        return await performCheckIn(
           base64Image: base64Image,
           latitude: latitude,
           longitude: longitude,
@@ -294,21 +311,24 @@ class FaceAttendanceService {
   }
 
   /// Perform check-in
-  Future<Map<String, dynamic>> _performCheckIn({
+  Future<Map<String, dynamic>> performCheckIn({
     required String base64Image,
     required double latitude,
     required double longitude,
     String? address,
   }) async {
     try {
-      final attendanceData = {
+      final useGeo = _geoFieldsSupported ?? true;
+
+      final attendanceData = <String, dynamic>{
         'employee_id': OdooRPCService.instance.currentEmployeeId,
-        'check_in': DateTime.now().toIso8601String(),
-        'in_latitude': latitude,
-        'in_longitude': longitude,
-        'in_address': address ?? 'Unknown location',
-        'face_image': base64Image,
+        'check_in': _formatOdooDateTime(DateTime.now()),
       };
+
+      if (useGeo) {
+        attendanceData['in_latitude'] = latitude;
+        attendanceData['in_longitude'] = longitude;
+      }
 
       print('🔍 Performing check-in with data: $attendanceData');
 
@@ -319,6 +339,7 @@ class FaceAttendanceService {
       );
 
       if (result['success']) {
+        _geoFieldsSupported = useGeo;
         print('✅ Check-in successful');
         return {
           'success': true,
@@ -327,10 +348,20 @@ class FaceAttendanceService {
           'data': result['data'],
         };
       } else {
+        final error = result['error']?.toString() ?? 'Failed to check in';
+        if (useGeo && _looksLikeMissingGeoField(error)) {
+          _geoFieldsSupported = false;
+          return await performCheckIn(
+            base64Image: base64Image,
+            latitude: latitude,
+            longitude: longitude,
+            address: address,
+          );
+        }
         return {
           'success': false,
           'action': 'check_in',
-          'error': result['error'] ?? 'Failed to check in',
+          'error': error,
         };
       }
     } catch (e) {
@@ -343,19 +374,23 @@ class FaceAttendanceService {
   }
 
   /// Perform check-out
-  Future<Map<String, dynamic>> _performCheckOut({
+  Future<Map<String, dynamic>> performCheckOut({
     required int attendanceId,
     required double latitude,
     required double longitude,
     String? address,
   }) async {
     try {
-      final checkoutData = {
-        'check_out': DateTime.now().toIso8601String(),
-        'out_latitude': latitude,
-        'out_longitude': longitude,
-        'out_address': address ?? 'Unknown location',
+      final useGeo = _geoFieldsSupported ?? true;
+
+      final checkoutData = <String, dynamic>{
+        'check_out': _formatOdooDateTime(DateTime.now()),
       };
+
+      if (useGeo) {
+        checkoutData['out_latitude'] = latitude;
+        checkoutData['out_longitude'] = longitude;
+      }
 
       print('🔍 Performing check-out with data: $checkoutData');
 
@@ -366,6 +401,7 @@ class FaceAttendanceService {
       );
 
       if (result['success']) {
+        _geoFieldsSupported = useGeo;
         print('✅ Check-out successful');
         return {
           'success': true,
@@ -374,10 +410,20 @@ class FaceAttendanceService {
           'data': result['data'],
         };
       } else {
+        final error = result['error']?.toString() ?? 'Failed to check out';
+        if (useGeo && _looksLikeMissingGeoField(error)) {
+          _geoFieldsSupported = false;
+          return await performCheckOut(
+            attendanceId: attendanceId,
+            latitude: latitude,
+            longitude: longitude,
+            address: address,
+          );
+        }
         return {
           'success': false,
           'action': 'check_out',
-          'error': result['error'] ?? 'Failed to check out',
+          'error': error,
         };
       }
     } catch (e) {
@@ -449,6 +495,86 @@ class FaceAttendanceService {
         'error': 'Exception: $e',
       };
     }
+  }
+
+  /// Format DateTime to Odoo expected UTC string without fractional seconds
+  String _formatOdooDateTime(DateTime dateTime) {
+    final utc = dateTime.toUtc();
+    return '${utc.year.toString().padLeft(4, '0')}'
+        '-${utc.month.toString().padLeft(2, '0')}'
+        '-${utc.day.toString().padLeft(2, '0')} '
+        '${utc.hour.toString().padLeft(2, '0')}:'
+        '${utc.minute.toString().padLeft(2, '0')}:'
+        '${utc.second.toString().padLeft(2, '0')}';
+  }
+
+  bool _looksLikeMissingGeoField(String message) {
+    return message.contains("Invalid field 'in_latitude'") ||
+        message.contains("Invalid field 'in_longitude'") ||
+        message.contains("Invalid field 'out_latitude'") ||
+        message.contains("Invalid field 'out_longitude'");
+  }
+
+  Future<Map<String, dynamic>> submitFaceViaController({
+    required String base64Image,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      final url = Uri.parse('${OdooConfig.baseUrl}/submit_face');
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'HR App Flutter Face Attendance',
+        },
+        body: {
+          'face_image': 'data:image/jpeg;base64,$base64Image',
+          'latitude': latitude?.toString() ?? '',
+          'longitude': longitude?.toString() ?? '',
+        },
+      ).timeout(Duration(milliseconds: OdooConfig.writeTimeout));
+
+      if (response.statusCode == 200) {
+        final message = _extractMessageFromHtml(response.body);
+        final isSuccess = message.contains('Success') || message.contains('✅');
+        return isSuccess
+            ? {
+                'success': true,
+                'message': message,
+              }
+            : {
+                'success': false,
+                'error': message,
+              };
+      } else {
+        return {
+          'success': false,
+          'error': 'HTTP ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Face verification failed: $e',
+      };
+    }
+  }
+
+  String _extractMessageFromHtml(String html) {
+    final messageMatch = RegExp(
+      r'<p[^>]*class="message"[^>]*>(.*?)</p>',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(html);
+    var message = messageMatch?.group(1) ?? html;
+    message = message.replaceAll(RegExp(r'<[^>]+>'), '');
+    message = message
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>');
+    return message.trim();
   }
 
   /// Dispose camera resources
