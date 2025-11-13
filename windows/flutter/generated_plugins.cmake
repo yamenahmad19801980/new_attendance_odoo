@@ -3,7 +3,6 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  camera_windows
   geolocator_windows
   permission_handler_windows
 )

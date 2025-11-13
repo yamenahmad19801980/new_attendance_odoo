@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -10,8 +11,6 @@ import '../services/hr_service.dart';
 import '../services/odoo_rpc_service.dart';
 import 'login_screen.dart';
 import 'odoo_config_screen.dart';
-
-enum AttendanceAction { checkIn, checkOut }
 
 class FaceAttendanceScreen extends StatefulWidget {
   const FaceAttendanceScreen({super.key});
@@ -67,30 +66,35 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
     final permissionGranted = await _ensureLocationPermission();
     if (!permissionGranted) return;
 
-    final current = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    ).catchError((_) => null);
+    try {
+      final current = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
 
-    if (mounted && current != null) {
-      setState(() {
-        _currentPosition = current;
-        _lastLocationUpdate = DateTime.now();
-      });
+      if (mounted) {
+        setState(() {
+          _currentPosition = current;
+          _lastLocationUpdate = DateTime.now();
+        });
+      }
+    } catch (_) {
+      // Location not available, will retry via stream
     }
 
     _locationSubscription?.cancel();
-    _locationSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10,
-      ),
-    ).listen((position) {
-      if (!mounted) return;
-      setState(() {
-        _currentPosition = position;
-        _lastLocationUpdate = DateTime.now();
-      });
-    });
+    _locationSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10,
+          ),
+        ).listen((position) {
+          if (!mounted) return;
+          setState(() {
+            _currentPosition = position;
+            _lastLocationUpdate = DateTime.now();
+          });
+        });
   }
 
   Future<bool> _ensureLocationPermission() async {
@@ -128,7 +132,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
     });
   }
 
-  Future<void> _handleAttendance(AttendanceAction action) async {
+  Future<void> _handleAttendance() async {
     if (_isProcessing) return;
 
     setState(() {
@@ -140,30 +144,24 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
       final status = await _faceService.getCurrentAttendanceStatus();
       final currentlyCheckedIn = status['is_checked_in'] == true;
 
-      if (action == AttendanceAction.checkIn && currentlyCheckedIn) {
-        _setFeedback('You are already checked in.', success: false);
-        return;
-      }
-
-      if (action == AttendanceAction.checkOut && !currentlyCheckedIn) {
-        _setFeedback('You need to check in before checking out.', success: false);
-        return;
-      }
-
       final capture = await _showCameraAndCapture();
+      log('capture: $capture');
       if (capture == null || capture['success'] != true) {
         final error = capture?['error'] ?? 'Could not capture your face.';
+        log('❌ Error: $error');
         _setFeedback(error.toString(), success: false);
         return;
       }
 
       final latitude = (capture['latitude'] as num?)?.toDouble();
       final longitude = (capture['longitude'] as num?)?.toDouble();
-      final address = capture['address'] as String?;
       final base64Image = capture['image'] as String?;
 
       if (base64Image == null || base64Image.isEmpty) {
-        _setFeedback('Face image not captured. Please try again.', success: false);
+        _setFeedback(
+          'Face image not captured. Please try again.',
+          success: false,
+        );
         return;
       }
 
@@ -172,13 +170,15 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
         latitude: latitude,
         longitude: longitude,
       );
+      log('controllerResult: $controllerResult');
 
       if (controllerResult['success'] == true) {
         await _refreshAttendanceStatus();
-        final message = controllerResult['message'] ??
-            (action == AttendanceAction.checkIn
-                ? 'Check-in completed successfully.'
-                : 'Check-out completed successfully.');
+        final message =
+            controllerResult['message'] ??
+            (currentlyCheckedIn
+                ? 'Check-out completed successfully.'
+                : 'Check-in completed successfully.');
         _setFeedback(message, success: true);
       } else {
         _setFeedback(
@@ -186,8 +186,9 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
           success: false,
         );
       }
-    } catch (e) {
-      _setFeedback('Unexpected error: $e', success: false);
+    } catch (e, stackTrace) {
+      log('❌ Stack trace: $stackTrace');
+      _setFeedback('Unexpected error: $e, $stackTrace', success: false);
     } finally {
       await _faceService.stopCamera();
       if (mounted) {
@@ -208,6 +209,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
     }
 
     final controller = _faceService.cameraController;
+
     if (controller == null) {
       _setFeedback('Camera controller not ready.', success: false);
       return null;
@@ -292,10 +294,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
               }
             },
             itemBuilder: (context) => const [
-              PopupMenuItem<String>(
-                value: 'logout',
-                child: Text('Logout'),
-              ),
+              PopupMenuItem<String>(value: 'logout', child: Text('Logout')),
             ],
             icon: const Icon(Icons.person_outline),
           ),
@@ -314,7 +313,8 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                     children: [
                       Text(
                         'Welcome!',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Colors.blueGrey[900],
                             ),
@@ -323,39 +323,24 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
                       Text(
                         'What would you like to do today?',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.blueGrey[500],
-                            ),
+                          color: Colors.blueGrey[500],
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ActionCard(
-                        title: 'Check In',
-                        subtitle:
-                            _isCheckedIn ? 'Already checked in' : 'Start your workday',
-                        icon: Icons.login_rounded,
-                        colors: const [Color(0xFF4CAF50), Color(0xFF2E7D32)],
-                        disabled: _isProcessing || _isCheckedIn,
-                        onTap: () => _handleAttendance(AttendanceAction.checkIn),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: _ActionCard(
-                        title: 'Check Out',
-                        subtitle:
-                            _isCheckedIn ? 'Wrap up your day' : 'Waiting for check-in',
-                        icon: Icons.logout_rounded,
-                        colors: const [Color(0xFFFF6F61), Color(0xFFD84315)],
-                        disabled: _isProcessing || !_isCheckedIn,
-                        onTap: () => _handleAttendance(AttendanceAction.checkOut),
-                      ),
-                    ),
-                  ],
+                _ActionCard(
+                  title: 'Check In / Check Out',
+                  subtitle: _isCheckedIn
+                      ? 'Currently checked in - Tap to check out'
+                      : 'Ready to start - Tap to check in',
+                  icon: Icons.fingerprint_rounded,
+                  colors: _isCheckedIn
+                      ? const [Color(0xFFFF6F61), Color(0xFFD84315)]
+                      : const [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+                  disabled: _isProcessing,
+                  onTap: _handleAttendance,
                 ),
                 const SizedBox(height: 28),
                 _LocationCard(
@@ -376,9 +361,7 @@ class _FaceAttendanceScreenState extends State<FaceAttendanceScreen> {
           if (_isProcessing)
             Container(
               color: Colors.black26,
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: const Center(child: CircularProgressIndicator()),
             ),
         ],
       ),
@@ -431,15 +414,16 @@ class _ActionCard extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(icon, size: 48, color: Colors.white),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Text(
                       title,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
@@ -457,9 +441,9 @@ class _ActionCard extends StatelessWidget {
                       child: Text(
                         subtitle,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.blueGrey[800],
-                              fontWeight: FontWeight.w600,
-                            ),
+                          color: Colors.blueGrey[800],
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -512,10 +496,7 @@ class _LocationCard extends StatelessWidget {
                   color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
-                  Icons.location_on,
-                  color: Colors.blue,
-                ),
+                child: const Icon(Icons.location_on, color: Colors.blue),
               ),
               const SizedBox(width: 14),
               Column(
@@ -524,14 +505,14 @@ class _LocationCard extends StatelessWidget {
                   Text(
                     'Current Location',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   Text(
                     updatedText,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.blueGrey[400],
-                        ),
+                      color: Colors.blueGrey[400],
+                    ),
                   ),
                 ],
               ),
@@ -549,16 +530,16 @@ class _LocationCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             'Odoo Server',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Colors.blueGrey[400],
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: Colors.blueGrey[400]),
           ),
           const SizedBox(height: 4),
           Text(
             server,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -586,17 +567,17 @@ class _LocationChip extends StatelessWidget {
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Colors.blueGrey[400],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(color: Colors.blueGrey[400]),
             ),
             const SizedBox(height: 4),
             Text(
               value,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blueGrey[900],
-                  ),
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey[900],
+              ),
             ),
           ],
         ),
@@ -606,10 +587,7 @@ class _LocationChip extends StatelessWidget {
 }
 
 class _FeedbackBanner extends StatelessWidget {
-  const _FeedbackBanner({
-    required this.message,
-    required this.success,
-  });
+  const _FeedbackBanner({required this.message, required this.success});
 
   final String message;
   final bool success;
@@ -638,9 +616,9 @@ class _FeedbackBanner extends StatelessWidget {
             child: Text(
               message,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: success ? Colors.green[800] : Colors.red[800],
-                    fontWeight: FontWeight.w600,
-                  ),
+                color: success ? Colors.green[800] : Colors.red[800],
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -683,10 +661,7 @@ class _CameraCaptureSheetState extends State<_CameraCaptureSheet> {
         final message =
             result['error']?.toString() ?? 'Capture failed. Try again.';
         ScaffoldMessenger.of(widget.parentContext).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -715,7 +690,9 @@ class _CameraCaptureSheetState extends State<_CameraCaptureSheet> {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 child: CameraPreview(widget.controller),
               ),
             ),
@@ -731,11 +708,15 @@ class _CameraCaptureSheetState extends State<_CameraCaptureSheet> {
                           height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
                         )
                       : const Icon(Icons.camera_alt_outlined),
-                  label: Text(_isCapturing ? 'Capturing...' : 'Capture & Continue'),
+                  label: Text(
+                    _isCapturing ? 'Capturing...' : 'Capture & Continue',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue[600],
                     foregroundColor: Colors.white,
@@ -753,4 +734,3 @@ class _CameraCaptureSheetState extends State<_CameraCaptureSheet> {
     );
   }
 }
-

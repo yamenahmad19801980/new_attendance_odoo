@@ -1,17 +1,20 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../config/odoo_config.dart';
 import 'odoo_rpc_service.dart';
 
 class FaceAttendanceService {
   static FaceAttendanceService? _instance;
-  static FaceAttendanceService get instance => _instance ??= FaceAttendanceService._internal();
-  
+  static FaceAttendanceService get instance =>
+      _instance ??= FaceAttendanceService._internal();
+
   FaceAttendanceService._internal();
 
   CameraController? _cameraController;
@@ -56,13 +59,13 @@ class FaceAttendanceService {
 
       _cameraController = CameraController(
         frontCamera,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
       );
 
       await _cameraController!.initialize();
       _isInitialized = true;
-      
+
       print('✅ Camera initialized successfully');
       return true;
     } catch (e) {
@@ -107,10 +110,7 @@ class FaceAttendanceService {
   Future<Map<String, dynamic>> takeAttendancePhoto() async {
     try {
       if (!_isInitialized || _cameraController == null) {
-        return {
-          'success': false,
-          'error': 'Camera not initialized',
-        };
+        return {'success': false, 'error': 'Camera not initialized'};
       }
 
       if (!_isCameraActive) {
@@ -120,25 +120,19 @@ class FaceAttendanceService {
       // Get current location
       final location = await _getCurrentLocation();
       if (location == null) {
-        return {
-          'success': false,
-          'error': 'Could not get current location',
-        };
+        return {'success': false, 'error': 'Could not get current location'};
       }
 
       // Take photo
       final image = await _cameraController!.takePicture();
-      if (image == null) {
-        return {
-          'success': false,
-          'error': 'Failed to capture image',
-        };
-      }
 
-      // Convert image to base64
-      final imageFile = File(image.path);
-      final imageBytes = await imageFile.readAsBytes();
-      final base64Image = base64Encode(imageBytes);
+      // Compress and convert image to base64
+      final compressedBytes = await _compressImage(image.path);
+      if (compressedBytes == null) {
+        return {'success': false, 'error': 'Failed to compress image'};
+      }
+      final base64Image = base64Encode(compressedBytes);
+      log('base64Image length: ${base64Image.length} characters');
 
       // Get address from coordinates
       final address = await _getAddressFromCoordinates(
@@ -146,7 +140,7 @@ class FaceAttendanceService {
         location.longitude,
       );
 
-      return {
+      final result = {
         'success': true,
         'image': base64Image,
         'latitude': location.latitude,
@@ -154,12 +148,12 @@ class FaceAttendanceService {
         'address': address,
         'timestamp': DateTime.now().toIso8601String(),
       };
-    } catch (e) {
-      print('❌ Error taking attendance photo: $e');
-      return {
-        'success': false,
-        'error': 'Error taking photo: $e',
-      };
+      log('result takeAttendancePhoto: $result');
+      return result;
+    } catch (e, stackTrace) {
+      log('❌ Error taking attendance photo: $e');
+      log('❌ Stack trace: $stackTrace');
+      return {'success': false, 'error': 'Error taking photo: $e'};
     }
   }
 
@@ -202,9 +196,15 @@ class FaceAttendanceService {
   }
 
   /// Get address from coordinates
-  Future<String> _getAddressFromCoordinates(double latitude, double longitude) async {
+  Future<String> _getAddressFromCoordinates(
+    double latitude,
+    double longitude,
+  ) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        latitude,
+        longitude,
+      );
       if (placemarks.isNotEmpty) {
         final placemark = placemarks.first;
         final street = placemark.street?.trim();
@@ -248,7 +248,9 @@ class FaceAttendanceService {
       final isCurrentlyCheckedIn = currentStatus['is_checked_in'] ?? false;
       final currentAttendanceId = currentStatus['attendance_id'];
 
-      print('🔍 Current attendance status: ${isCurrentlyCheckedIn ? "Checked In" : "Checked Out"}');
+      print(
+        '🔍 Current attendance status: ${isCurrentlyCheckedIn ? "Checked In" : "Checked Out"}',
+      );
 
       if (isCurrentlyCheckedIn) {
         // Perform check-out
@@ -269,26 +271,24 @@ class FaceAttendanceService {
       }
     } catch (e) {
       print('❌ Error submitting face attendance: $e');
-      return {
-        'success': false,
-        'error': 'Error submitting attendance: $e',
-      };
+      return {'success': false, 'error': 'Error submitting attendance: $e'};
     }
   }
 
   /// Get current attendance status
   Future<Map<String, dynamic>> getCurrentAttendanceStatus() async {
     try {
-      final result = await _callOdooMethod(
-        'hr.attendance',
-        'search_read',
+      final result = await _callOdooMethod('hr.attendance', 'search_read', [
         [
-          [['employee_id', '=', OdooRPCService.instance.currentEmployeeId], ['check_out', '=', false]],
-          ['id', 'check_in', 'check_out'],
+          ['employee_id', '=', OdooRPCService.instance.currentEmployeeId],
+          ['check_out', '=', false],
         ],
-      );
+        ['id', 'check_in', 'check_out'],
+      ]);
 
-      if (result['success'] && result['data'] != null && result['data'].isNotEmpty) {
+      if (result['success'] &&
+          result['data'] != null &&
+          result['data'].isNotEmpty) {
         final attendance = result['data'][0];
         return {
           'is_checked_in': true,
@@ -297,16 +297,10 @@ class FaceAttendanceService {
         };
       }
 
-      return {
-        'is_checked_in': false,
-        'attendance_id': null,
-      };
+      return {'is_checked_in': false, 'attendance_id': null};
     } catch (e) {
       print('❌ Error getting current attendance status: $e');
-      return {
-        'is_checked_in': false,
-        'attendance_id': null,
-      };
+      return {'is_checked_in': false, 'attendance_id': null};
     }
   }
 
@@ -332,11 +326,9 @@ class FaceAttendanceService {
 
       print('🔍 Performing check-in with data: $attendanceData');
 
-      final result = await _callOdooMethod(
-        'hr.attendance',
-        'create',
-        [attendanceData],
-      );
+      final result = await _callOdooMethod('hr.attendance', 'create', [
+        attendanceData,
+      ]);
 
       if (result['success']) {
         _geoFieldsSupported = useGeo;
@@ -344,7 +336,8 @@ class FaceAttendanceService {
         return {
           'success': true,
           'action': 'check_in',
-          'message': 'Successfully checked in with face recognition and location',
+          'message':
+              'Successfully checked in with face recognition and location',
           'data': result['data'],
         };
       } else {
@@ -358,11 +351,7 @@ class FaceAttendanceService {
             address: address,
           );
         }
-        return {
-          'success': false,
-          'action': 'check_in',
-          'error': error,
-        };
+        return {'success': false, 'action': 'check_in', 'error': error};
       }
     } catch (e) {
       return {
@@ -394,11 +383,10 @@ class FaceAttendanceService {
 
       print('🔍 Performing check-out with data: $checkoutData');
 
-      final result = await _callOdooMethod(
-        'hr.attendance',
-        'write',
-        [attendanceId, checkoutData],
-      );
+      final result = await _callOdooMethod('hr.attendance', 'write', [
+        attendanceId,
+        checkoutData,
+      ]);
 
       if (result['success']) {
         _geoFieldsSupported = useGeo;
@@ -420,11 +408,7 @@ class FaceAttendanceService {
             address: address,
           );
         }
-        return {
-          'success': false,
-          'action': 'check_out',
-          'error': error,
-        };
+        return {'success': false, 'action': 'check_out', 'error': error};
       }
     } catch (e) {
       return {
@@ -443,7 +427,7 @@ class FaceAttendanceService {
   ) async {
     try {
       final url = Uri.parse('${OdooConfig.baseUrl}/jsonrpc');
-      
+
       final response = await http.post(
         url,
         headers: {
@@ -471,18 +455,17 @@ class FaceAttendanceService {
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
-        
+
         if (jsonResponse['error'] != null) {
           return {
             'success': false,
-            'error': jsonResponse['error']['data']['message'] ?? 'Odoo method call failed',
+            'error':
+                jsonResponse['error']['data']['message'] ??
+                'Odoo method call failed',
           };
         }
 
-        return {
-          'success': true,
-          'data': jsonResponse['result'],
-        };
+        return {'success': true, 'data': jsonResponse['result']};
       } else {
         return {
           'success': false,
@@ -490,10 +473,7 @@ class FaceAttendanceService {
         };
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Exception: $e',
-      };
+      return {'success': false, 'error': 'Exception: $e'};
     }
   }
 
@@ -522,42 +502,32 @@ class FaceAttendanceService {
   }) async {
     try {
       final url = Uri.parse('${OdooConfig.baseUrl}/submit_face');
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'HR App Flutter Face Attendance',
-        },
-        body: {
-          'face_image': 'data:image/jpeg;base64,$base64Image',
-          'latitude': latitude?.toString() ?? '',
-          'longitude': longitude?.toString() ?? '',
-        },
-      ).timeout(Duration(milliseconds: OdooConfig.writeTimeout));
+      final response = await http
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'HR App Flutter Face Attendance',
+            },
+            body: {
+              'face_image': 'data:image/jpeg;base64,$base64Image',
+              'latitude': latitude?.toString() ?? '',
+              'longitude': longitude?.toString() ?? '',
+            },
+          )
+          .timeout(Duration(milliseconds: OdooConfig.writeTimeout));
 
       if (response.statusCode == 200) {
         final message = _extractMessageFromHtml(response.body);
         final isSuccess = message.contains('Success') || message.contains('✅');
         return isSuccess
-            ? {
-                'success': true,
-                'message': message,
-              }
-            : {
-                'success': false,
-                'error': message,
-              };
+            ? {'success': true, 'message': message}
+            : {'success': false, 'error': message};
       } else {
-        return {
-          'success': false,
-          'error': 'HTTP ${response.statusCode}',
-        };
+        return {'success': false, 'error': 'HTTP ${response.statusCode}'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Face verification failed: $e',
-      };
+      return {'success': false, 'error': 'Face verification failed: $e'};
     }
   }
 
@@ -575,6 +545,37 @@ class FaceAttendanceService {
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>');
     return message.trim();
+  }
+
+  /// Compress image to reduce size while maintaining quality for face recognition
+  ///
+  /// Compresses the image with 88% quality and resizes to max 1024x1024
+  /// Returns compressed image bytes, or null if compression fails
+  Future<List<int>?> _compressImage(String filePath) async {
+    try {
+      final result = await FlutterImageCompress.compressWithFile(
+        filePath,
+        minWidth: 1024,
+        minHeight: 1024,
+        quality: 88,
+        format: CompressFormat.jpeg,
+      );
+
+      if (result != null) {
+        final originalSize = File(filePath).lengthSync();
+        final compressedSize = result.length;
+        final reduction = ((originalSize - compressedSize) / originalSize * 100)
+            .toStringAsFixed(1);
+        log(
+          '📸 Image compressed: ${originalSize ~/ 1024}KB → ${compressedSize ~/ 1024}KB (${reduction}% reduction)',
+        );
+      }
+
+      return result;
+    } catch (e) {
+      log('❌ Error compressing image: $e');
+      return null;
+    }
   }
 
   /// Dispose camera resources

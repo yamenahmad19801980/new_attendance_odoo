@@ -6,10 +6,10 @@ import 'services/local_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Load Odoo configuration on app start
   await OdooConfig.loadConfiguration();
-  
+
   runApp(const HrApp());
 }
 
@@ -19,6 +19,7 @@ class HrApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'HR App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -45,7 +46,8 @@ class _StartupRouter extends StatelessWidget {
     final savedDatabase = await storage.getOdooDatabase();
     final isFirstLogin = await storage.isFirstLogin();
 
-    final hasConfig = (savedUrl != null && savedUrl.isNotEmpty) &&
+    final hasConfig =
+        (savedUrl != null && savedUrl.isNotEmpty) &&
         (savedDatabase != null && savedDatabase.isNotEmpty);
 
     if (!hasConfig || isFirstLogin) {
@@ -62,9 +64,7 @@ class _StartupRouter extends StatelessWidget {
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'dart:async';
+
 import '../models/hr_attendance.dart';
 import '../models/hr_employee.dart';
 import '../services/hr_service.dart';
@@ -10,7 +13,7 @@ class AttendanceScreen extends StatefulWidget {
   final DateTime? initialCheckInDateTime;
   final String? initialCheckInTime;
   final String? initialTotalWorkedHours;
-  
+
   const AttendanceScreen({
     super.key,
     this.initialIsCheckedIn,
@@ -49,7 +52,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    
+
     // Initialize with passed values if available
     if (widget.initialIsCheckedIn != null) {
       _isCheckedIn = widget.initialIsCheckedIn!;
@@ -63,7 +66,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     if (widget.initialTotalWorkedHours != null) {
       _totalWorkedHours = widget.initialTotalWorkedHours!;
     }
-    
+
     _loadAttendanceData();
     _slideController.forward();
   }
@@ -91,18 +94,19 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         setState(() {
           _isCheckedIn = summary['is_checked_in'] ?? false;
           _totalWorkedHours = summary['total_worked_hours'] ?? '00:00:00';
-          
+
           // Set check-in time if available
           if (summary['current_check_in'] != null) {
             final checkInTime = summary['current_check_in'] as DateTime;
             _checkInDateTime = checkInTime;
-            _checkInTime = '${checkInTime.hour.toString().padLeft(2, '0')}:${checkInTime.minute.toString().padLeft(2, '0')}:${checkInTime.second.toString().padLeft(2, '0')}';
+            _checkInTime =
+                '${checkInTime.hour.toString().padLeft(2, '0')}:${checkInTime.minute.toString().padLeft(2, '0')}:${checkInTime.second.toString().padLeft(2, '0')}';
           } else {
             _checkInDateTime = null;
             _checkInTime = '--:--:--';
           }
         });
-        
+
         // Start or stop timer based on check-in status
         if (_isCheckedIn && _checkInDateTime != null) {
           _startTimer();
@@ -111,12 +115,14 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           _stopTimer();
           _pulseController.stop();
         }
-        
+
         // Show appropriate message based on check-in status
         if (_isCheckedIn) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('ℹ️ You are already checked in since $_checkInTime. Use the Log Out button below to check out.'),
+              content: Text(
+                'ℹ️ You are already checked in since $_checkInTime. Use the Log Out button below to check out.',
+              ),
               backgroundColor: Colors.blue[600],
               duration: const Duration(seconds: 4),
               action: SnackBarAction(
@@ -196,30 +202,34 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     try {
       // Get current employee
       _currentEmployee = await _hrService.getCurrentEmployee();
-      
+
       if (_currentEmployee != null) {
         // Get today's attendance summary
         final summary = await _hrService.getTodayAttendanceSummary(
           employeeId: _currentEmployee!.id,
         );
-        
+        log(summary.toString(), name: "is_checked_in");
+
         setState(() {
           _isCheckedIn = summary['is_checked_in'] ?? false;
           _totalWorkedHours = summary['total_worked_hours'] ?? '00:00:00';
-          _todayRecords = List<HrAttendance>.from(summary['today_records'] ?? []);
+          _todayRecords = List<HrAttendance>.from(
+            summary['today_records'] ?? [],
+          );
           _isLoading = false;
-          
+
           // Set check-in time if available
           if (summary['current_check_in'] != null) {
             final checkInTime = summary['current_check_in'] as DateTime;
             _checkInDateTime = checkInTime;
-            _checkInTime = '${checkInTime.hour.toString().padLeft(2, '0')}:${checkInTime.minute.toString().padLeft(2, '0')}:${checkInTime.second.toString().padLeft(2, '0')}';
+            _checkInTime =
+                '${checkInTime.hour.toString().padLeft(2, '0')}:${checkInTime.minute.toString().padLeft(2, '0')}:${checkInTime.second.toString().padLeft(2, '0')}';
           } else {
             _checkInDateTime = null;
             _checkInTime = '--:--:--';
           }
         });
-        
+
         // Start or stop timer based on check-in status
         if (_isCheckedIn && _checkInDateTime != null) {
           _startTimer();
@@ -266,7 +276,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           setState(() {
             _isCheckedIn = true;
             _checkInDateTime = now;
-            _checkInTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+            _checkInTime =
+                '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
           });
           _startTimer();
           _pulseController.repeat();
@@ -278,7 +289,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           );
         }
       }
-      
+
       if (success) {
         await _loadAttendanceData(); // Reload data
       } else {
@@ -291,10 +302,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -353,10 +361,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -383,7 +388,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       ),
                     ),
                     IconButton(
-                      onPressed: () => Navigator.pushNamed(context, '/attendance-report'),
+                      onPressed: () =>
+                          Navigator.pushNamed(context, '/attendance-report'),
                       icon: const Icon(Icons.analytics, color: Colors.white),
                       tooltip: 'View Reports',
                     ),
@@ -394,7 +400,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   ],
                 ),
               ),
-              
+
               // Content
               Expanded(
                 child: Container(
@@ -424,29 +430,29 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         children: [
           // Status Indicator
           _buildStatusIndicator(),
-          
+
           const SizedBox(height: 24),
-          
+
           // Employee Info Card
           _buildEmployeeCard(),
-          
+
           const SizedBox(height: 24),
-          
+
           // Main Attendance Card
           _buildMainAttendanceCard(),
-          
+
           const SizedBox(height: 24),
-          
+
           // Today's Summary
           _buildTodaySummary(),
-          
+
           const SizedBox(height: 24),
-          
+
           // Today's Records
           _buildTodayRecords(),
-          
+
           const SizedBox(height: 24),
-          
+
           // View Reports Button
           _buildViewReportsButton(),
         ],
@@ -494,9 +500,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _isCheckedIn 
-                    ? 'You are checked in and your work session is active'
-                    : 'You are not checked in. Ready to start your work session.',
+                  _isCheckedIn
+                      ? 'You are checked in and your work session is active'
+                      : 'You are not checked in. Ready to start your work session.',
                   style: TextStyle(
                     fontSize: 14,
                     color: _isCheckedIn ? Colors.green[600] : Colors.blue[600],
@@ -538,11 +544,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               color: const Color(0xFF6B46C1),
               borderRadius: BorderRadius.circular(30),
             ),
-            child: const Icon(
-              Icons.person,
-              size: 30,
-              color: Colors.white,
-            ),
+            child: const Icon(Icons.person, size: 30, color: Colors.white),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -561,19 +563,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   const SizedBox(height: 4),
                   Text(
                     _currentEmployee!.jobTitle!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
                 const SizedBox(height: 4),
                 Text(
                   'ID: ${_currentEmployee?.id ?? 'N/A'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               ],
             ),
@@ -599,17 +595,17 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  gradient: _isCheckedIn 
-                    ? const LinearGradient(
-                        colors: [Colors.green, Colors.greenAccent],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                    : const LinearGradient(
-                        colors: [Color(0xFF6B46C1), Color(0xFF9F7AEA)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                  gradient: _isCheckedIn
+                      ? const LinearGradient(
+                          colors: [Colors.green, Colors.greenAccent],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFF6B46C1), Color(0xFF9F7AEA)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -624,7 +620,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _isCheckedIn ? 'Currently Working' : 'Register Attendance',
+                      _isCheckedIn
+                          ? 'Currently Working'
+                          : 'Register Attendance',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -632,12 +630,14 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       ),
                     ),
                     Text(
-                      _isCheckedIn 
-                        ? 'Checked in since $_checkInTime - Use Log Out to end your shift'
-                        : 'Not Checked In - Use Log In to start your shift',
+                      _isCheckedIn
+                          ? 'Checked in since $_checkInTime - Use Log Out to end your shift'
+                          : 'Not Checked In - Use Log In to start your shift',
                       style: TextStyle(
                         fontSize: 14,
-                        color: _isCheckedIn ? Colors.green[600] : Colors.grey[600],
+                        color: _isCheckedIn
+                            ? Colors.green[600]
+                            : Colors.grey[600],
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -700,20 +700,37 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildTimeBox('${(_seconds ~/ 3600).toString().padLeft(2, '0')}'),
-                      const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                      _buildTimeBox('${((_seconds % 3600) ~/ 60).toString().padLeft(2, '0')}'),
-                      const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                      _buildTimeBox('${(_seconds % 60).toString().padLeft(2, '0')}'),
+                      _buildTimeBox(
+                        '${(_seconds ~/ 3600).toString().padLeft(2, '0')}',
+                      ),
+                      const Text(
+                        ' : ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      _buildTimeBox(
+                        '${((_seconds % 3600) ~/ 60).toString().padLeft(2, '0')}',
+                      ),
+                      const Text(
+                        ' : ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      _buildTimeBox(
+                        '${(_seconds % 60).toString().padLeft(2, '0')}',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Started at $_checkInTime',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ],
               ),
@@ -735,13 +752,10 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                _isCheckedIn 
-                  ? 'You are currently checked in. Click Log Out to end your work session.'
-                  : 'You are not checked in. Click Log In to start your work session.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
+                _isCheckedIn
+                    ? 'You are currently checked in. Click Log Out to end your work session.'
+                    : 'You are not checked in. Click Log In to start your work session.',
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 12),
               Row(
@@ -752,7 +766,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       icon: Icon(_isCheckedIn ? Icons.logout : Icons.login),
                       label: Text(_isCheckedIn ? 'Log Out' : 'Log In'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _isCheckedIn ? Colors.red[600] : Colors.green[600],
+                        backgroundColor: _isCheckedIn
+                            ? Colors.red[600]
+                            : Colors.green[600],
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -764,7 +780,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => Navigator.pushNamed(context, '/attendance-report'),
+                      onPressed: () =>
+                          Navigator.pushNamed(context, '/attendance-report'),
                       icon: const Icon(Icons.analytics),
                       label: const Text('View Reports'),
                       style: OutlinedButton.styleFrom(
@@ -828,9 +845,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               ),
             ],
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           Row(
             children: [
               Expanded(
@@ -902,11 +919,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
         padding: const EdgeInsets.all(40),
         child: Column(
           children: [
-            Icon(
-              Icons.access_time,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.access_time, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
               'No attendance records for today',
@@ -919,10 +932,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             const SizedBox(height: 8),
             Text(
               'Check in to start tracking your time',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -957,9 +967,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
             ),
           ],
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -975,12 +985,14 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   Widget _buildAttendanceRecordCard(HrAttendance record, int index) {
     final isCurrentSession = record.isCheckedIn;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isCurrentSession ? const Color(0xFF48BB78).withOpacity(0.1) : Colors.white,
+        color: isCurrentSession
+            ? const Color(0xFF48BB78).withOpacity(0.1)
+            : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isCurrentSession ? const Color(0xFF48BB78) : Colors.grey[200]!,
@@ -999,8 +1011,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isCurrentSession 
-                  ? const Color(0xFF48BB78) 
+              color: isCurrentSession
+                  ? const Color(0xFF48BB78)
                   : Colors.grey[400],
               borderRadius: BorderRadius.circular(8),
             ),
@@ -1010,9 +1022,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               size: 20,
             ),
           ),
-          
+
           const SizedBox(width: 16),
-          
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1024,8 +1036,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isCurrentSession 
-                            ? const Color(0xFF48BB78) 
+                        color: isCurrentSession
+                            ? const Color(0xFF48BB78)
                             : Colors.grey[700],
                       ),
                     ),
@@ -1051,16 +1063,16 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                       ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 Row(
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Check In',
+                          'Check In ',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -1076,9 +1088,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                         ),
                       ],
                     ),
-                    
+
                     const SizedBox(width: 24),
-                    
+
                     if (record.checkOut != null) ...[
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1100,9 +1112,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(width: 24),
-                      
+
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
