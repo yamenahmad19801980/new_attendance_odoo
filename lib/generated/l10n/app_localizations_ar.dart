@@ -24,10 +24,16 @@ class AppLocalizationsAr extends AppLocalizations {
   String get email => 'البريد الإلكتروني';
 
   @override
+  String get username => 'اسم المستخدم';
+
+  @override
   String get password => 'كلمة المرور';
 
   @override
   String get emailRequired => 'البريد الإلكتروني مطلوب';
+
+  @override
+  String get usernameRequired => 'اسم المستخدم مطلوب';
 
   @override
   String get emailInvalid => 'أدخل بريداً إلكترونياً صالحاً';

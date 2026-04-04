@@ -186,10 +186,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 40),
                 TextFormField(
                   controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                   decoration: InputDecoration(
-                    labelText: l10n.email,
-                    prefixIcon: const Icon(Icons.alternate_email),
+                    labelText: l10n.username,
+                    prefixIcon: const Icon(Icons.person_outline),
                     filled: true,
                     fillColor: Colors.white,
                     border: OutlineInputBorder(
@@ -199,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return l10n.emailRequired;
+                      return l10n.usernameRequired;
                     }
                     // if (!RegExp(
                     //   r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',

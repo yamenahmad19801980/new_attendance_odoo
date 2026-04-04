@@ -128,6 +128,12 @@ abstract class AppLocalizations {
   /// **'Email'**
   String get email;
 
+  /// No description provided for @username.
+  ///
+  /// In en, this message translates to:
+  /// **'Username'**
+  String get username;
+
   /// No description provided for @password.
   ///
   /// In en, this message translates to:
@@ -139,6 +145,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Email is required'**
   String get emailRequired;
+
+  /// No description provided for @usernameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Username is required'**
+  String get usernameRequired;
 
   /// No description provided for @emailInvalid.
   ///
