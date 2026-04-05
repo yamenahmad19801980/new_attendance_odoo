@@ -1,6 +1,6 @@
 class OdooConfig {
   // Odoo server configuration - fixed values
-  static const String baseUrl = 'https://al-shalawi.gulftriangle.net/';
+  static const String baseUrl = 'https://al-shalawi.gulftriangle.net/mobile/';
   static const String database = 'al-shalawi';
   static const String apiVersion = '1.0';
 
